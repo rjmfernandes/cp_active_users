@@ -1,10 +1,10 @@
-# CP Active Users
+# CP Active Users and Operations Auditing/Exclusion
 
-- [CP Active Users](#cp-active-users)
+- [CP Active Users and Operations Auditing/Exclusion](#cp-active-users-and-operations-auditingexclusion)
   - [Setup](#setup)
   - [Fetch Users per time and operation](#fetch-users-per-time-and-operation)
   - [Only the unique users from today](#only-the-unique-users-from-today)
-  - [Update Audit configuration](#update-audit-configuration)
+  - [Operations Auditing/Exclusion](#operations-auditingexclusion)
   - [Cleanup](#cleanup)
 
 ## Setup
@@ -85,7 +85,7 @@ cat time_users.txt | jq '.time + "," + .data.authenticationInfo.principal' | gre
 
 This will give you the list of active users today at least from the point of view of your audited operations.
 
-## Update Audit configuration
+## Operations Auditing/Exclusion
 
 Run:
 
@@ -120,9 +120,6 @@ Let's edit it and change to something like this:
 ```json
 {
   "destinations": {
-    "bootstrap_servers": [
-            "localhost:9092"
-    ],
     "topics": {
       "confluent-audit-log-events": {
         "retention_ms": 7776000000
@@ -134,7 +131,7 @@ Let's edit it and change to something like this:
     "denied": "confluent-audit-log-events"
   },
   "routes": {
-    "crn://localhost:9092/kafka=*/topic=*": {
+    "crn:///kafka=*/topic=*": {
         "produce": {
             "allowed": "confluent-audit-log-events",
             "denied": "confluent-audit-log-events"
@@ -157,6 +154,144 @@ Now we can update:
 ```shell
 confluent audit-log config update < ./config.json
 ```
+
+Confirm new logs for Read and Write operations show up:
+
+```shell
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq '.time + "," + .data.authenticationInfo.principal + "," + .data.authorizationInfo.operation'
+```
+
+Download again locally:
+
+```shell
+confluent audit-log config describe > config.json
+```
+
+And edit to:
+
+```json
+{
+  "destinations": {
+    "topics": {
+      "confluent-audit-log-events": {
+        "retention_ms": 7776000000
+      }
+    }
+  },
+  "default_topics": {
+    "allowed": "confluent-audit-log-events",
+    "denied": "confluent-audit-log-events"
+  },
+  "routes": {
+    "crn:///kafka=*/topic=*": {
+      "authorize": {
+        "allowed": null,
+        "denied": null
+      },
+      "management": {
+        "allowed": null,
+        "denied": null
+      },
+      "produce": {
+        "allowed": "",
+        "denied": ""
+      },
+      "consume": {
+        "allowed": "",
+        "denied": ""
+      },
+      "describe": {
+        "allowed": "",
+        "denied": ""
+      }
+    }
+  },
+  "metadata": {
+    "resource_version": "WDdDTDqv1ZJRIHNaNYKZyg",
+    "updated_at": "2024-09-30T14:42:04Z"
+  }
+}
+```
+
+Update again:
+
+```shell
+confluent audit-log config update < ./config.json
+```
+
+In another shell execute:
+
+```shell
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_confkafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq
+```
+
+We want to see the details of each audit. You will have Describe operations but check resourceType and it should be Cluster and not topic.
+
+If you execute:
+
+```shell
+kafka-topics --bootstrap-server localhost:9092 --list --command-config ../delta_configs/client.properties.delta
+```
+
+No describe operation related to topics should appear.
+
+Update the config to:
+
+```json
+{
+  "destinations": {
+    "topics": {
+      "confluent-audit-log-events": {
+        "retention_ms": 7776000000
+      }
+    }
+  },
+  "default_topics": {
+    "allowed": "confluent-audit-log-events",
+    "denied": "confluent-audit-log-events"
+  },
+  "routes": {
+    "crn:///kafka=*/topic=*": {
+      "authorize": {
+        "allowed": null,
+        "denied": null
+      },
+      "management": {
+        "allowed": null,
+        "denied": null
+      },
+      "produce": {
+        "allowed": "",
+        "denied": ""
+      },
+      "consume": {
+        "allowed": "",
+        "denied": ""
+      },
+      "describe": {
+        "allowed": "confluent-audit-log-events",
+        "denied": "confluent-audit-log-events"
+      }
+    }
+  },
+  "metadata": {
+    "resource_version": "WDdDTDqv1ZJRIHNaNYKZyg",
+    "updated_at": "2024-09-30T14:42:04Z"
+  }
+}
+```
+
+```shell
+confluent audit-log config update < ./config.json
+```
+
+Execute again: 
+
+```shell
+kafka-topics --bootstrap-server localhost:9092 --list --command-config ../delta_configs/client.properties.delta
+```
+
+Now you should see entries related to DescribeConfigs and Describe with resourceType Topic.
 
 ## Cleanup
 
