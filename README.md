@@ -4,7 +4,8 @@
   - [Setup](#setup)
   - [Fetch Users per time and operation](#fetch-users-per-time-and-operation)
   - [Only the unique users from today](#only-the-unique-users-from-today)
-  - [Operations Auditing/Exclusion](#operations-auditingexclusion)
+  - [Audit Configuration](#audit-configuration)
+    - [Exclude describe operations](#exclude-describe-operations)
   - [Cleanup](#cleanup)
 
 ## Setup
@@ -85,7 +86,7 @@ cat time_users.txt | jq '.time + "," + .data.authenticationInfo.principal' | gre
 
 This will give you the list of active users today at least from the point of view of your audited operations.
 
-## Operations Auditing/Exclusion
+## Audit Configuration
 
 Run:
 
@@ -292,6 +293,100 @@ kafka-topics --bootstrap-server localhost:9092 --list --command-config ../delta_
 ```
 
 Now you should see entries related to DescribeConfigs and Describe with resourceType Topic.
+
+### Exclude describe operations
+
+Let's execute in a separate shell for monitoring specifics of audit events:
+
+```shell
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq '.time + "," + .data.authenticationInfo.principal + "," + .data.authorizationInfo.operation + "," + .data.methodName + "," + .data.authorizationInfo.resourceType + "," + .data.authorizationInfo.resourceName'
+```
+
+Now if you execute:
+
+```shell
+kafka-consumer-groups --bootstrap-server localhost:9092 --list --command-config ../delta_configs/client.properties.delta 
+```
+
+You get past consumer groups. If you start in a separate shell:
+
+```shell
+kafka-console-consumer --topic topic1 --bootstrap-server localhost:9092 --consumer.config ../delta_configs/client.properties.delta --from-beginning --property print.key=true
+```
+
+We can then execute and see the new consumer group:
+
+```shell
+kafka-consumer-groups --bootstrap-server localhost:9092 --list --command-config ../delta_configs/client.properties.delta 
+```
+
+And pass that consumer group id into:
+
+```shell
+kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-config ../delta_configs/client.properties.delta --group console-consumer-42110
+```
+
+We should see on our logs different audit events related to the topic1: Describe and DescribeConfigs.
+
+Let's update our audit configuration to:
+
+```json
+{
+  "destinations": {
+    "topics": {
+      "confluent-audit-log-events": {
+        "retention_ms": 7776000000
+      }
+    }
+  },
+  "default_topics": {
+    "allowed": "confluent-audit-log-events",
+    "denied": "confluent-audit-log-events"
+  },
+  "routes": {
+    "crn:///kafka=*/topic=*": {
+      "authorize": {
+        "allowed": null,
+        "denied": null
+      },
+      "management": {
+        "allowed": null,
+        "denied": null
+      },
+      "produce": {
+        "allowed": "",
+        "denied": ""
+      },
+      "consume": {
+        "allowed": "",
+        "denied": ""
+      },
+      "describe": {
+        "allowed": "",
+        "denied": ""
+      }
+    }
+  },
+  "metadata": {
+    "resource_version": "B1LCQd_yo8BW7iHwCVWNGA",
+    "updated_at": "2024-10-01T08:57:02Z"
+  }
+}
+```
+
+So executing:
+
+```shell
+confluent audit-log config update < ./config.json
+```
+
+Now if we execute again: 
+
+```shell
+kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-config ../delta_configs/client.properties.delta --group console-consumer-42110
+```
+
+We should not see logged any Describe or DescribeConfigs related to topic1 while monitoring the audit log.
 
 ## Cleanup
 
