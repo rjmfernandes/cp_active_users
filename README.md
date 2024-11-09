@@ -447,7 +447,7 @@ kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-u
 
 You should see there wont be any more audit messages being produced to the audit log topic `confluent-audit-log-events`.
 
-If we want we can recert by deleting our dynamic configuration:
+If we want we can revert by deleting our dynamic configuration:
 
 ```shell
 kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-user.properties --entity-type brokers --entity-default --alter --delete-config confluent.security.event.router.config,bootstrap.servers
