@@ -1,12 +1,20 @@
 # CP Active Users and Operations Auditing/Exclusion
 
 - [CP Active Users and Operations Auditing/Exclusion](#cp-active-users-and-operations-auditingexclusion)
+  - [Disclaimer](#disclaimer)
   - [Setup](#setup)
   - [Fetch Users per time and operation](#fetch-users-per-time-and-operation)
   - [Only the unique users from today](#only-the-unique-users-from-today)
   - [Audit Configuration](#audit-configuration)
     - [Exclude describe operations](#exclude-describe-operations)
   - [Cleanup](#cleanup)
+  - [For a non MDS setup](#for-a-non-mds-setup)
+    - [Cleanup](#cleanup-1)
+
+## Disclaimer
+
+The code and/or instructions here available are **NOT** intended for production usage. 
+It's only meant to serve as an example or reference and does not replace the need to follow actual and official documentation of referenced products.
 
 ## Setup
 
@@ -395,4 +403,62 @@ confluent logout
 ./cleanup.sh
 cd ../../../..
 rm -fr examples
+```
+
+## For a non MDS setup
+
+Now we will check how to configure audit logging for non MDS setup.
+
+We will be using our local `compose.yml`.
+
+If you were using `kafka.security.authorizer.AclAuthorizer` as `KAFKA_AUTHORIZER_CLASS_NAME` you will need to change that to `io.confluent.kafka.security.authorizer.ConfluentServerAuthorizer`.
+
+So we start CP:
+
+```shell
+docker compose up -d
+```
+
+And once started you should see in Control Center the topic `confluent-audit-log-events` with messages populated.
+
+Now we can change the audit log configuration. First we open a shell into one of the broker containers:
+
+```shell
+docker compose exec kafka bash
+```
+
+Next we can list the configuration to confirm there are no dynamic configurations:
+
+```shell
+kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-user.properties --entity-type brokers --entity-default --describe
+```
+
+Now we add our new configuration from the file `./kafka/new.properties`:
+
+```shell
+kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-user.properties --entity-type brokers --entity-default --alter --add-config-file /etc/kafka/new.properties
+```
+
+You can list again the changes to confirm they were applied:
+
+```shell
+kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-user.properties --entity-type brokers --entity-default --describe
+```
+
+You should see there wont be any more audit messages being produced to the audit log topic `confluent-audit-log-events`.
+
+If we want we can recert by deleting our dynamic configuration:
+
+```shell
+kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-user.properties --entity-type brokers --entity-default --alter --delete-config confluent.security.event.router.config,bootstrap.servers
+```
+
+The new audit log messages should start a bit after to show up on our topic.
+
+We can exit now from our container shell.
+
+### Cleanup
+
+```shell
+docker compose down -v
 ```
