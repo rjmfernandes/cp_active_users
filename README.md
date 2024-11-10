@@ -7,6 +7,7 @@
   - [Only the unique users from today](#only-the-unique-users-from-today)
   - [Audit Configuration](#audit-configuration)
     - [Exclude describe operations](#exclude-describe-operations)
+      - [What if we log the rest of operations](#what-if-we-log-the-rest-of-operations)
   - [Cleanup](#cleanup)
   - [For a non MDS setup](#for-a-non-mds-setup)
     - [Cleanup](#cleanup-1)
@@ -25,7 +26,9 @@ git clone https://github.com/confluentinc/examples.git
 cd examples
 git checkout 7.7.1-post
 cd security/rbac/scripts
+echo "Running Init Script..."
 ./init.sh
+echo "Enabling RBAC..."
 ./enable-rbac-broker.sh
 ```
 
@@ -231,7 +234,7 @@ confluent audit-log config update < ./config.json
 In another shell execute:
 
 ```shell
-kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_confkafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq
 ```
 
 We want to see the details of each audit. You will have Describe operations but check resourceType and it should be Cluster and not topic.
@@ -243,6 +246,12 @@ kafka-topics --bootstrap-server localhost:9092 --list --command-config ../delta_
 ```
 
 No describe operation related to topics should appear.
+
+Run again:
+
+```shell
+confluent audit-log config describe > config.json
+```
 
 Update the config to:
 
@@ -334,9 +343,15 @@ And pass that consumer group id into:
 kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-config ../delta_configs/client.properties.delta --group console-consumer-42110
 ```
 
-We should see on our logs different audit events related to the topic1: Describe and DescribeConfigs.
+We should see on our logs different audit events related to the topic1: Describe operation.
 
-Let's update our audit configuration to:
+Let's execute:
+
+```shell
+confluent audit-log config describe > config.json
+```
+
+And update our audit configuration to:
 
 ```json
 {
@@ -396,7 +411,136 @@ kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-con
 
 We should not see logged any Describe or DescribeConfigs related to topic1 while monitoring the audit log.
 
+#### What if we log the rest of operations
+
+Let's execute:
+
+```shell
+confluent audit-log config describe > config.json
+```
+
+And update our config to:
+
+```json
+{
+  "destinations": {
+    "topics": {
+      "confluent-audit-log-events": {
+        "retention_ms": 7776000000
+      }
+    }
+  },
+  "default_topics": {
+    "allowed": "confluent-audit-log-events",
+    "denied": "confluent-audit-log-events"
+  },
+  "routes": {
+    "crn:///kafka=*/topic=*": {
+      "authorize": {
+        "allowed": "confluent-audit-log-events",
+        "denied": "confluent-audit-log-events"
+      },
+      "management": {
+        "allowed": "confluent-audit-log-events",
+        "denied": "confluent-audit-log-events"
+      },
+      "produce": {
+        "allowed": "confluent-audit-log-events",
+        "denied": "confluent-audit-log-events"
+      },
+      "consume": {
+        "allowed": "confluent-audit-log-events",
+        "denied": "confluent-audit-log-events"
+      },
+      "describe": {
+        "allowed": "",
+        "denied": ""
+      }
+    },
+    "crn:///kafka=*/topic=confluent-audit-log-events": {
+      "authorize": {
+        "allowed": "",
+        "denied": ""
+      },
+      "management": {
+        "allowed": "",
+        "denied": ""
+      },
+      "produce": {
+        "allowed": "",
+        "denied": ""
+      },
+      "consume": {
+        "allowed": "",
+        "denied": ""
+      },
+      "describe": {
+        "allowed": "",
+        "denied": ""
+      }
+    },
+    "crn:///kafka=*/topic=_confluent*": {
+      "authorize": {
+        "allowed": "",
+        "denied": ""
+      },
+      "management": {
+        "allowed": "",
+        "denied": ""
+      },
+      "produce": {
+        "allowed": "",
+        "denied": ""
+      },
+      "consume": {
+        "allowed": "",
+        "denied": ""
+      },
+      "describe": {
+        "allowed": "",
+        "denied": ""
+      }
+    }
+  },
+  "metadata": {
+    "resource_version": "B1LCQd_yo8BW7iHwCVWNGA",
+    "updated_at": "2024-10-01T08:57:02Z"
+  }
+}
+```
+
+(We are excluding logs from internal topics also as well from the audit log topic itself.)
+
+Executing:
+
+```shell
+confluent audit-log config update < ./config.json
+```
+
+We are going to start having too many audit logs so we change our monitoring to:
+
+```shell
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq '.time + "," + .data.authenticationInfo.principal + "," + .data.authorizationInfo.operation + "," + .data.methodName + "," + .data.authorizationInfo.resourceType + "," + .data.authorizationInfo.resourceName' | grep 'Describe'
+```
+
+The if we execute again: 
+
+```shell
+kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-config ../delta_configs/client.properties.delta --group console-consumer-42110
+```
+
+If you wait a bit you should see a line on your monitoring corresponding to a describe operation on the topic1 related to `kafka.ListOffsets` as methodName:
+
+```
+"2024-11-10T12:52:12.260623Z,User:clienta,Describe,kafka.ListOffsets,Topic,topic1"
+```
+
+Which doesnt seem consistent with the fact that we have excluded the describe operation for our topics.
+
 ## Cleanup
+
+
+Make sure you are at `examples/security/rbac/scripts`:
 
 ```shell
 confluent logout
