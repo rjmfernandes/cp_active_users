@@ -523,7 +523,7 @@ We are going to start having too many audit logs so we change our monitoring to:
 kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config ../delta_configs/clientsma.properties.delta --from-beginning --topic confluent-audit-log-events | jq '.time + "," + .data.authenticationInfo.principal + "," + .data.authorizationInfo.operation + "," + .data.methodName + "," + .data.authorizationInfo.resourceType + "," + .data.authorizationInfo.resourceName' | grep 'Describe'
 ```
 
-The if we execute again: 
+Then if we execute again: 
 
 ```shell
 kafka-consumer-groups --bootstrap-server localhost:9092 --describe --command-config ../delta_configs/client.properties.delta --group console-consumer-42110
