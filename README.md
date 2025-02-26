@@ -10,6 +10,7 @@
       - [What if we log the rest of operations](#what-if-we-log-the-rest-of-operations)
   - [Cleanup](#cleanup)
   - [For a non MDS setup](#for-a-non-mds-setup)
+    - [Capture Non Internal Topic Events (except describe)](#capture-non-internal-topic-events-except-describe)
     - [Cleanup](#cleanup-1)
 
 ## Disclaimer
@@ -600,6 +601,28 @@ kafka-configs --bootstrap-server kafka:29093 --command-config=/etc/kafka/kafka-u
 The new audit log messages should start a bit after to show up on our topic.
 
 We can exit now from our container shell.
+
+### Capture Non Internal Topic Events (except describe)
+
+Make sure to run:
+
+```shell
+kafka-configs --bootstrap-server localhost:9092 --command-config=./kafka/kafka-user.properties --entity-type brokers --entity-default --alter --add-config-file ./kafka/producer.properties
+```
+
+This will update the audit config for capturing all events execpt describe for non internal topics (as an example) using `kafka/producer.properties` (it also exclude events associated with the audit log topic itself).
+
+Now if you produce through Control Center into a new topic named `test` or through command line:
+
+```shell
+kakafka-console-producer --broker-list localhost:9092 --topic test --producer.config ./kafka/kafka-user.properties 
+```
+
+After some seconds you should see the events captured while consuming from audit log topic:
+
+```shell
+kafka-console-consumer --bootstrap-server localhost:9092 --consumer.config kafka/kafka-user.properties --from-beginning --topic confluent-audit-log-events | jq '.time + "," + .data.authenticationInfo.principal + "," + .data.authorizationInfo.operation + ","+ .data.resourceName' | grep 'test'
+```
 
 ### Cleanup
 
